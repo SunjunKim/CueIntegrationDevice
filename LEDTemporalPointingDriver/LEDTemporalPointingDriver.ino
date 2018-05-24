@@ -1,3 +1,9 @@
+#include "CircularBuffer.h"
+
+struct Button {
+  unsigned long timestamp;
+  bool value;
+};
 
 const int targetPin = 3;
 const int aimPin = 4;
@@ -16,6 +22,12 @@ bool buttonState = false;
 unsigned long resetTime = 0;
 
 unsigned long lastMicro;
+
+// implementing button delay
+unsigned long latency = 50;
+unsigned long lastSavedTime = 0;
+CircularBuffer<Button, 1000> buffer;
+// to use: buffer.push(Button{ts, value});   /  Button data = buffer.pop();
 
 void setup() {
   // put your setup code here, to run once:
@@ -42,7 +54,7 @@ void loop() {
     Serial1.write(Serial.read());
   }
 
-  // time keeping (unit: 100 us).
+  // time keeping (unit: 100 us = 0.1 ms).
   unsigned long newMicro = micros();
   unsigned long timestamp = (newMicro - lastMicro) / 100UL;
   if(resetTime != 0 && timestamp >= resetTime)
@@ -53,8 +65,29 @@ void loop() {
     Serial.println("\tR");
   }
 
+  // add delay
+  unsigned long elapsedTimeFromLastSave = timestamp - lastSavedTime;
+  int currentButtonValue = digitalRead(buttonAttachPin);
+  int buttonValue = currentButtonValue;
+  if(elapsedTimeFromLastSave > 5)  // 0.5 ms gaps between each item on buffer
+  {
+    lastSavedTime = timestamp;
+    buffer.push(Button{timestamp, digitalRead(buttonAttachPin)});   // add value to tail
+  }
+  
+  while(buffer.remain() > 0) // clear the expired data (elapsed more than [latency]) from the queue
+  {
+    if(timestamp - buffer.peek().timestamp > latency)
+    {
+      buffer.pop();
+    }
+  }
+  if(buffer.remain() > 0)
+    buttonValue = buffer.peek().value; // assign the delayed button value from the head of the queue.
+
+
   // button trigger and debounce
-  if(digitalRead(buttonAttachPin) == LOW)
+  if(buttonValue == LOW)
   {
     if(buttonState == false)
     {
@@ -73,19 +106,19 @@ void loop() {
     }
   }
 
-  if(digitalRead(buttonAttachPin) != buttonPinState)
+  if(buttonValue != buttonPinState)
   {
     buttonPinState = !buttonPinState;
 
-    if(buttonPinState)  // Button pin Raising edge
+    if(buttonPinState)  // Button pin Raising edge (button off)
     {
       Serial.print(timestamp);
-      Serial.println("\tB0");
+      Serial.println(F("\tB0"));
     }
     else                // Button pin Falling edge (button on)
     {
       Serial.print(timestamp);
-      Serial.println("\tB1");
+      Serial.println(F("\tB1"));
     }
   }
 
@@ -96,12 +129,12 @@ void loop() {
     if(targetPinState)  // Target pin Raising edge
     {
       Serial.print(timestamp);
-      Serial.println("\tT1");
+      Serial.println(F("\tT1"));
     }
     else                // Target pin Falling edge
     {
       Serial.print(timestamp);
-      Serial.println("\tT0");         
+      Serial.println(F("\tT0"));         
     }
   }
   if(digitalRead(aimPin) != aimPinState)
@@ -110,14 +143,14 @@ void loop() {
     if(aimPinState)   // Aim pin Raising edge
     {
       Serial.print(timestamp);
-      Serial.println("\tA1");
+      Serial.println(F("\tA1"));
     }
     else              // Aim pin Falling edge
     {
       // set timer reset at T+300ms
       resetTime = timestamp + 3000UL;
       Serial.print(timestamp);
-      Serial.println("\tA0");
+      Serial.println(F("\tA0"));
     }
   }
 
