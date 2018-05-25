@@ -2,7 +2,7 @@
 
 struct Button {
   unsigned long timestamp;
-  bool value;
+  int value;
 };
 
 const int targetPin = 3;
@@ -24,9 +24,9 @@ unsigned long resetTime = 0;
 unsigned long lastMicro;
 
 // implementing button delay
-unsigned long latency = 50;
+unsigned long latency = 50 * 1000;
 unsigned long lastSavedTime = 0;
-CircularBuffer<Button, 1000> buffer;
+CircularBuffer<Button, 1000> buffer;  // maximum 500 ms
 // to use: buffer.push(Button{ts, value});   /  Button data = buffer.pop();
 
 void setup() {
@@ -44,6 +44,8 @@ void setup() {
 
   // assign internal pull-up
   digitalWrite(buttonAttachPin, HIGH);
+
+  lastSavedTime = micros();
 }
 
 
@@ -51,7 +53,19 @@ void loop() {
   // transfer serial messages to the strip driver.
   if (Serial.available() > 0)
   {
-    Serial1.write(Serial.read());
+    char c = Serial.read();
+    if(c == 'l')  // latency command
+    {
+      latency = readNumber() * 1000;
+
+      if(latency > 500 * 1000)
+      {
+        Serial.println(F("ERROR: TOO MUCH LATENCY: limit to 500"));
+        latency = 500 * 1000;
+      }        
+    }
+    
+    Serial1.write(c);
   }
 
   // time keeping (unit: 100 us = 0.1 ms).
@@ -66,25 +80,27 @@ void loop() {
   }
 
   // add delay
-  unsigned long elapsedTimeFromLastSave = timestamp - lastSavedTime;
-  int currentButtonValue = digitalRead(buttonAttachPin);
-  int buttonValue = currentButtonValue;
-  if(elapsedTimeFromLastSave > 5)  // 0.5 ms gaps between each item on buffer
+  unsigned long elapsedTimeFromLastSave = newMicro - lastSavedTime;
+  int rawButtonValue = digitalRead(buttonAttachPin);
+  int buttonValue = rawButtonValue;
+  
+  if(elapsedTimeFromLastSave > 500)  // 0.5 ms gaps between each item on buffer
   {
-    lastSavedTime = timestamp;
-    buffer.push(Button{timestamp, digitalRead(buttonAttachPin)});   // add value to tail
+    lastSavedTime = newMicro;
+    buffer.push(Button{newMicro, digitalRead(buttonAttachPin)});   // add value to tail
   }
   
   while(buffer.remain() > 0) // clear the expired data (elapsed more than [latency]) from the queue
   {
-    if(timestamp - buffer.peek().timestamp > latency)
+    if(newMicro - buffer.peek().timestamp > latency)
     {
       buffer.pop();
     }
+    else
+      break;
   }
   if(buffer.remain() > 0)
     buttonValue = buffer.peek().value; // assign the delayed button value from the head of the queue.
-
 
   // button trigger and debounce
   if(buttonValue == LOW)
@@ -155,4 +171,31 @@ void loop() {
   }
 
   digitalWrite(buttonPin, !buttonState);
+}
+
+unsigned long readNumber()
+{
+  String inString = "";
+  for (int i = 0; i < 10; i++)
+  {
+    while (Serial.available() == 0);
+    int inChar = Serial.read();
+    if (isDigit(inChar))
+    {
+      inString += (char)inChar;
+    }
+
+    if (inChar == '\n')
+    {
+      int val = inString.toInt();
+      return (unsigned long)val;
+    }
+  }
+
+  // flush remain strings in serial buffer
+  while (Serial.available() > 0)
+  {
+    Serial.read();
+  }
+  return 0UL;
 }
