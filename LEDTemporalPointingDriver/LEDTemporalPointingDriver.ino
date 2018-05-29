@@ -24,7 +24,7 @@ unsigned long resetTime = 0;
 unsigned long lastMicro;
 
 // implementing button delay
-unsigned long latency = 50 * 1000;
+unsigned long latency = 50UL * 1000UL;
 unsigned long lastSavedTime = 0;
 CircularBuffer<Button, 1000> buffer;  // maximum 500 ms
 // to use: buffer.push(Button{ts, value});   /  Button data = buffer.pop();
@@ -58,10 +58,10 @@ void loop() {
     {
       latency = readNumber() * 1000;
 
-      if(latency > 500 * 1000)
+      if(latency > 500UL * 1000UL)
       {
         Serial.println(F("ERROR: TOO MUCH LATENCY: limit to 500"));
-        latency = 500 * 1000;
+        latency = 500UL * 1000UL;
       }        
     }
     
