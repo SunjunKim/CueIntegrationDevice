@@ -32,8 +32,9 @@ uint32_t targetColor = 0x202000;
 uint32_t stopColor = 0x002001;
 uint32_t stopColorError = 0x200000;
 
-bool positionFeedback = true;
+bool positionFeedback = false;
 bool positionGrab = false;
+unsigned long stopDuration = 50;  // set duration of position feedback
 
 // 0 - - - - -> (timestamp: task running time)
 // |--------------- distance ----------------| \
@@ -61,6 +62,8 @@ int lastPosition = 0; // keeping the last lighted position (to prevent skipping)
 bool reset = true;  // timer reset flag
 
 int stopPos = 0;    // stopped (=target intercepped) position
+unsigned long stopTime = 0; // is a timestamp when the button is pressed
+
 bool catchedTarget = false;   // is true when a button press is made within the aim
 bool processStop = false;     // is true when a button is pressed at somewhere.
 bool stopPosPassed = false;   // is true when a target is passed beyond the stopPos
@@ -70,6 +73,8 @@ int randSpeed = 0;            // std. of randomness in speed
 // random offsets
 long randomOffset = 0;
 long randomSpeedOffset = 0;
+
+int btnPinState = false;
 
 void setup() {
 #if defined(__AVR_ATtiny85__) && (F_CPU == 16000000L)
@@ -86,9 +91,9 @@ void setup() {
 
   pinMode(targetPin, OUTPUT);
   pinMode(aimPin, OUTPUT);
-  pinMode(buttonPin, INPUT);
+  pinMode(buttonPin, INPUT_PULLUP);
 
-  attachInterrupt(digitalPinToInterrupt(buttonPin), stopTarget, FALLING);
+  btnPinState = digitalRead(buttonPin);
 
   initTest();
   randomSeed(analogRead(0));
@@ -107,10 +112,6 @@ int calculateAimWidth(unsigned long temporalWidth, unsigned long mspeed)
   return (int)aw;
 }
 
-void stopTarget()
-{
-  processStop = true;
-}
 
 void processSerial()
 {
@@ -180,6 +181,17 @@ void processSerial()
 }
 
 void loop() {
+  // btn pin read ==> trigger button stop!
+  int newBtn = digitalRead(buttonPin);
+  if(btnPinState != newBtn)
+  {
+    if(newBtn == LOW)
+    {
+      processStop = true;
+    }
+  }
+  btnPinState = newBtn;  
+  
   processSerial();
 
   // put your main code here, to run repeatedly:
@@ -298,6 +310,8 @@ void loop() {
   if (processStop)
   {
     stopPos = targetPosition;
+    stopTime = timestamp;
+    
     if (elapsedPos < runningPixels / 3)
     {
       stopPos = targetPosition + runningPixels;
@@ -309,10 +323,19 @@ void loop() {
       catchedTarget = true;
   }
 
-  if (!positionFeedback && catchedTarget)
+
+  if (!positionFeedback && stopPos > 0 && timestamp - stopTime < stopDuration * 1000UL)
   {
-    strip.setPixelColor(aimStart - 3, aimSuccess);
-    strip.setPixelColor(aimEnd + 2, aimSuccess);
+    if(catchedTarget)
+    {
+      strip.setPixelColor(aimStart - 3, aimSuccess);
+      strip.setPixelColor(aimEnd + 2, aimSuccess);
+    }
+    else
+    {
+      strip.setPixelColor(aimStart - 3, aimFail);
+      strip.setPixelColor(aimEnd + 2, aimFail);
+    }
   }
 
   strip.show();
@@ -426,4 +449,3 @@ double box_muller(double sigma)
 
   return z0 * sigma;
 }
-
